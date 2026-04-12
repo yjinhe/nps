@@ -50,6 +50,10 @@ func main() {
 		common.PrintVersion()
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		migrateData()
+		return
+	}
 	if *serverCmd {
 		printSlogan()
 		inputCmd()
@@ -433,8 +437,17 @@ func run() {
 	logs.Info("日志路径：" + *npsLogPath)
 	logs.Info("the config path is:" + common.GetRunPath())
 	logs.Info("the version of server is %s ,allow client core version to be %s,tls enable is %t", version.VERSION, version.GetVersion(), bridge.ServerTlsEnable)
+
+	if mysqlDsn := beego.AppConfig.String("mysql_dsn"); mysqlDsn != "" {
+		logs.Info("mysql storage enabled, connecting to mysql...")
+		if err := file.InitMysqlStorage(mysqlDsn); err != nil {
+			logs.Error("mysql init error:", err)
+			os.Exit(0)
+		}
+		logs.Info("mysql storage initialized successfully")
+	}
+
 	connection.InitConnectionService()
-	//crypt.InitTls(filepath.Join(common.GetRunPath(), "conf", "server.pem"), filepath.Join(common.GetRunPath(), "conf", "server.key"))
 	crypt.InitTls()
 	tool.InitAllowPort()
 	tool.StartSystemInfo()

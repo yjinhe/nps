@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"ehang.io/nps/lib/common"
 	"ehang.io/nps/lib/crypt"
@@ -18,12 +19,28 @@ type DbUtils struct {
 	JsonDb *JsonDb
 }
 
+type DbInterface interface {
+	NewClient(c *Client) error
+	UpdateClient(t *Client) error
+	DelClient(id int) error
+	NewTask(t *Tunnel) error
+	UpdateTask(t *Tunnel) error
+	DelTask(id int) error
+	NewHost(h *Host) error
+	UpdateHost(h *Host) error
+	DelHost(id int) error
+	SaveGlobal(t *Glob) error
+	IsHostExist(h *Host) bool
+	VerifyVkey(vkey string, id int) bool
+	VerifyUserName(username string, id int) bool
+}
+
 var (
-	Db   *DbUtils
-	once sync.Once
+	Db       *DbUtils
+	MysqlMgr *MysqlDb
+	once     sync.Once
 )
 
-// init csv from file
 func GetDb() *DbUtils {
 	once.Do(func() {
 		jsonDb := NewJsonDb(common.GetRunPath())
@@ -34,6 +51,16 @@ func GetDb() *DbUtils {
 		Db = &DbUtils{JsonDb: jsonDb}
 	})
 	return Db
+}
+
+func InitMysqlStorage(dsn string) error {
+	m, err := InitMysql(dsn)
+	if err != nil {
+		return err
+	}
+	MysqlMgr = m
+	MysqlMgr.StartFlowSync(30 * time.Second)
+	return nil
 }
 
 func GetMapKeys(m sync.Map, isSort bool, sortKey, order string) (keys []int) {
@@ -94,6 +121,9 @@ func (s *DbUtils) GetIdByVerifyKey(vKey string, addr string) (id int, err error)
 }
 
 func (s *DbUtils) NewTask(t *Tunnel) (err error) {
+	if MysqlMgr != nil {
+		return MysqlMgr.NewTask(t)
+	}
 	s.JsonDb.Tasks.Range(func(key, value interface{}) bool {
 		v := value.(*Tunnel)
 		if (v.Mode == "secret" || v.Mode == "p2p") && v.Password == t.Password && t.Password != "" {
@@ -112,18 +142,27 @@ func (s *DbUtils) NewTask(t *Tunnel) (err error) {
 }
 
 func (s *DbUtils) UpdateTask(t *Tunnel) error {
+	if MysqlMgr != nil {
+		return MysqlMgr.UpdateTask(t)
+	}
 	s.JsonDb.Tasks.Store(t.Id, t)
 	s.JsonDb.StoreTasksToJsonFile()
 	return nil
 }
 
 func (s *DbUtils) SaveGlobal(t *Glob) error {
+	if MysqlMgr != nil {
+		return MysqlMgr.SaveGlobal(t)
+	}
 	s.JsonDb.Global = t
 	s.JsonDb.StoreGlobalToJsonFile()
 	return nil
 }
 
 func (s *DbUtils) DelTask(id int) error {
+	if MysqlMgr != nil {
+		return MysqlMgr.DelTask(id)
+	}
 	s.JsonDb.Tasks.Delete(id)
 	s.JsonDb.StoreTasksToJsonFile()
 	return nil
@@ -151,12 +190,18 @@ func (s *DbUtils) GetTask(id int) (t *Tunnel, err error) {
 }
 
 func (s *DbUtils) DelHost(id int) error {
+	if MysqlMgr != nil {
+		return MysqlMgr.DelHost(id)
+	}
 	s.JsonDb.Hosts.Delete(id)
 	s.JsonDb.StoreHostToJsonFile()
 	return nil
 }
 
 func (s *DbUtils) IsHostExist(h *Host) bool {
+	if MysqlMgr != nil {
+		return MysqlMgr.IsHostExist(h)
+	}
 	var exist bool
 	s.JsonDb.Hosts.Range(func(key, value interface{}) bool {
 		v := value.(*Host)
@@ -170,6 +215,9 @@ func (s *DbUtils) IsHostExist(h *Host) bool {
 }
 
 func (s *DbUtils) NewHost(t *Host) error {
+	if MysqlMgr != nil {
+		return MysqlMgr.NewHost(t)
+	}
 	if t.Location == "" {
 		t.Location = "/"
 	}
@@ -206,12 +254,18 @@ func (s *DbUtils) GetHost(start, length int, id int, search string) ([]*Host, in
 }
 
 func (s *DbUtils) DelClient(id int) error {
+	if MysqlMgr != nil {
+		return MysqlMgr.DelClient(id)
+	}
 	s.JsonDb.Clients.Delete(id)
 	s.JsonDb.StoreClientsToJsonFile()
 	return nil
 }
 
 func (s *DbUtils) NewClient(c *Client) error {
+	if MysqlMgr != nil {
+		return MysqlMgr.NewClient(c)
+	}
 	var isNotSet bool
 	if c.WebUserName != "" && !s.VerifyUserName(c.WebUserName, c.Id) {
 		return errors.New("web login username duplicate, please reset")
@@ -245,6 +299,9 @@ reset:
 }
 
 func (s *DbUtils) VerifyVkey(vkey string, id int) (res bool) {
+	if MysqlMgr != nil {
+		return MysqlMgr.VerifyVkey(vkey, id)
+	}
 	res = true
 	s.JsonDb.Clients.Range(func(key, value interface{}) bool {
 		v := value.(*Client)
@@ -258,6 +315,9 @@ func (s *DbUtils) VerifyVkey(vkey string, id int) (res bool) {
 }
 
 func (s *DbUtils) VerifyUserName(username string, id int) (res bool) {
+	if MysqlMgr != nil {
+		return MysqlMgr.VerifyUserName(username, id)
+	}
 	res = true
 	s.JsonDb.Clients.Range(func(key, value interface{}) bool {
 		v := value.(*Client)
@@ -271,6 +331,9 @@ func (s *DbUtils) VerifyUserName(username string, id int) (res bool) {
 }
 
 func (s *DbUtils) UpdateClient(t *Client) error {
+	if MysqlMgr != nil {
+		return MysqlMgr.UpdateClient(t)
+	}
 	s.JsonDb.Clients.Store(t.Id, t)
 	if t.RateLimit == 0 {
 		t.Rate = rate.NewRate(0)
